@@ -201,7 +201,10 @@ The card's right-click menu adds a **Credits** link to
 
 ## Z.ai
 
-Paste an API key from the [Z.ai key list](https://z.ai/manage-apikey/apikey-list). The card reads the
+Paste an API key from the [Z.ai key list](https://z.ai/manage-apikey/apikey-list). A key from
+BigModel (open.bigmodel.cn), Zhipu's China region, works too: the two regions issue keys that only
+work in their own region, so when one region refuses a key, OpenUsage asks the other region before
+calling the key rejected, and remembers the region that accepted it. The card reads the
 GLM Coding Plan subscription and quota endpoints for the session and weekly windows, the web-search
 quota, and the plan. A key with no GLM Coding Plan has no quota to read, and the card says so. The
 card's right-click menu adds an **API Keys** link to the

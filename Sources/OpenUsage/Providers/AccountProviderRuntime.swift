@@ -11,6 +11,9 @@ final class AccountProviderRuntime: ProviderRuntime {
     var planBodyRead = SecondaryRead<Data>()
     var codexResetCreditsRead = SecondaryRead<HTTPResponse>()
     var cursorMembershipRead = SecondaryRead<String>()
+    /// The Z.ai region (Z.ai or BigModel) that accepted this account's key, once a refresh has
+    /// found it; a later refresh asks that region first instead of probing both every time.
+    var zaiRegion: ZAIUsageClient.Region?
     let usageLedger = UsageLedger()
     let codexCreditsLedger = UsageLedger()
     var claude: ClaudeAccountState
@@ -338,10 +341,24 @@ final class AccountProviderRuntime: ProviderRuntime {
     private func refreshZAI(_ credential: AccountCredential) async throws -> ProviderUsage {
         guard case .apiKey(let key) = credential else { throw ProviderError.invalidResponse }
         let client = ZAIUsageClient(http: http)
-        let quota = try await client.fetchQuota(apiKey: key)
+        // A key only works in the region that issued it, so when a region refuses the key, ask
+        // the other region before calling the key rejected \u2014 a replaced key may belong to the
+        // other region. When both refuse it, the first region's answer stands and surfaces.
+        var region = zaiRegion ?? .zai
+        var quota = try await client.fetchQuota(apiKey: key, region: region)
+        if ZAIUsageClient.rejectsKey(quota) {
+            let otherQuota = try await client.fetchQuota(apiKey: key, region: region.other)
+            if !ZAIUsageClient.rejectsKey(otherQuota) {
+                quota = otherQuota
+                region = region.other
+            }
+        }
+        // Remember the region that did not refuse the key, so later refreshes ask it first; a
+        // refusal from both regions leaves the remembered region untouched and surfaces below.
+        if !ZAIUsageClient.rejectsKey(quota) { zaiRegion = region }
         try ProviderError.requireSuccess(quota, kind: .zai)
         if planBodyRead.isDue(at: now()) {
-            planBodyRead.record(successBody(try? await client.fetchSubscription(apiKey: key)), at: now())
+            planBodyRead.record(successBody(try? await client.fetchSubscription(apiKey: key, region: region)), at: now())
         }
         return try ZAIUsageMapper.map(quotaBody: quota.body, subscriptionBody: planBodyRead.value)
     }
